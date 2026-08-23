@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 from fetch_images import fetch_random_batch
 from clip_score import weird_score
@@ -32,6 +33,19 @@ def announce(message):
     print(f"\r\033[K{message}", flush=True)
 
 
+def publish(count):
+    """Commit the updated gallery and push it to GitHub. Best-effort: a git or
+    network hiccup should never crash the hunt, so failures are just reported.
+    Timeouts keep a stalled push from freezing the loop."""
+    try:
+        subprocess.run(["git", "add", "weird-images.md"], check=True, timeout=30)
+        subprocess.run(["git", "commit", "-m", f"Add {count} weird image(s)"], check=True, timeout=30)
+        subprocess.run(["git", "push"], check=True, timeout=60)
+        announce(f"⬆️  pushed {count} new find(s) to GitHub")
+    except Exception as error:
+        announce(f"git publish failed ({error}), continuing...")
+
+
 announce("Hunting for weird images... (Ctrl-C to stop)")
 while True:                                       # run forever, until the script is stopped
     try:
@@ -43,6 +57,7 @@ while True:                                       # run forever, until the scrip
         announce(f"batch failed ({error}), retrying...")
         continue
 
+    batch_saved = 0
     for i, (safe_name, image, page_url, thumb_url) in enumerate(batch, start=1):
         checked += 1
         status(f"\U0001f50d Scoring {i}/{len(batch)}  (checked {checked}, saved {saved})" + "." * (i % 4))
@@ -50,6 +65,10 @@ while True:                                       # run forever, until the scrip
         if score > threshold:                     # a keeper — log it and announce it
             log_to_md(score, safe_name, page_url, thumb_url)
             saved += 1
+            batch_saved += 1
             announce(f"\U0001f300 WEIRD  {score:.3f}  {page_url}")
+
+    if batch_saved:                               # only touch git when this batch found something
+        publish(batch_saved)
 
     status(f"\U0001f634 Batch done — checked {checked}, saved {saved}. Fetching more")
